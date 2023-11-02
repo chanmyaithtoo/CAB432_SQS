@@ -1,42 +1,42 @@
-const { v4: uuidv4 } = require('uuid');
-const fs = require('fs').promises;
 const path = require('path');
-const { exec } = require('child_process');
+const fs = require('fs').promises;
+const util = require('util');
+const exec = util.promisify(require('child_process').exec);
+const { v4: uuidv4 } = require('uuid');  // for generating unique file names
 
-function compressFiles(files) {
-    return new Promise(async (resolve, reject) => {
-        const tempFilePath = path.join(__dirname, `temp.7z`);
-        
-        // Save the files with their original names
-        try {
-            for (let file of files) {
-                await fs.writeFile(file.originalname, file.buffer);
-            }
+async function compressFiles(files) {
+    const tempFilePath = path.join(__dirname, `temp.7z`);
+    const tempFiles = [];
 
-            // Create a list of files to compress using their original names
-            const fileList = files.map(file => `"${file.originalname}"`).join(' ');
-
-            // Run 7zip command with maximum compression
-            exec(`7z a -mx=9 ${tempFilePath} ${fileList}`, async (error) => {
-                if (error) {
-                    reject(error);
-                    return;
-                }
-
-                const compressedBuffer = await fs.readFile(tempFilePath);
-                resolve(compressedBuffer);
-
-                // Clean up temporary files
-                await fs.unlink(tempFilePath);
-                for (let file of files) {
-                    await fs.unlink(file.originalname);
-                }
-            });
-        } catch (err) {
-            reject(err);
+    try {
+        // Save the files with unique names
+        for (let file of files) {
+            const uniqueName = `${uuidv4()}_${file.originalname}`;
+            await fs.writeFile(uniqueName, file.buffer);
+            tempFiles.push(uniqueName);
         }
-    });
+
+        // Create a list of files to compress
+        const fileList = tempFiles.map(fileName => `"${fileName}"`).join(' ');
+
+        // Run 7zip command with maximum compression
+        await exec(`7z a -mx=9 ${tempFilePath} ${fileList}`);
+
+        const compressedBuffer = await fs.readFile(tempFilePath);
+        return compressedBuffer;
+
+    } catch (err) {
+        throw err;  // or handle the error as needed
+
+    } finally {
+        // Always cleanup, regardless of success or failure
+        await fs.unlink(tempFilePath).catch(() => {});
+        for (let tempFile of tempFiles) {
+            await fs.unlink(tempFile).catch(() => {});
+        }
+    }
 }
+
 
 async function getUniqueFileName(desiredFileName) {
     let fileNameParts = desiredFileName.split('.');
