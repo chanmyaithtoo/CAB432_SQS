@@ -9,12 +9,14 @@ async function compressFiles(files) {
     const tempFiles = [];
 
     try {
-        // Save the files with unique names
-        for (let file of files) {
+        // Save the files with unique names concurrently
+        const writePromises = files.map(async file => {
             const uniqueName = `${uuidv4()}_${file.originalname}`;
             await fs.writeFile(uniqueName, file.buffer);
             tempFiles.push(uniqueName);
-        }
+        });
+        
+        await Promise.all(writePromises);
 
         // Create a list of files to compress
         const fileList = tempFiles.map(fileName => `"${fileName}"`).join(' ');
@@ -26,14 +28,14 @@ async function compressFiles(files) {
         return compressedBuffer;
 
     } catch (err) {
-        throw err;  // or handle the error as needed
+        throw err;
 
     } finally {
         // Always cleanup, regardless of success or failure
-        await fs.unlink(tempFilePath).catch(() => {});
-        for (let tempFile of tempFiles) {
-            await fs.unlink(tempFile).catch(() => {});
-        }
+        await Promise.allSettled([
+            fs.unlink(tempFilePath),
+            ...tempFiles.map(tempFile => fs.unlink(tempFile))
+        ]);
     }
 }
 
